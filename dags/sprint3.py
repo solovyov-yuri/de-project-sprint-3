@@ -184,11 +184,11 @@ with DAG(
         parameters={"date": {business_dt}},
     )
 
-    (
-        generate_report
-        >> get_report
-        # >> get_increment
-        # >> upload_user_order_inc
-        # >> [update_d_item_table, update_d_city_table, update_d_customer_table]
-        # >> update_f_sales
-    )
+(
+    generate_report
+    >> get_report
+    >> get_increment
+    >> upload_user_order_inc
+    >> [update_d_item_table, update_d_city_table, update_d_customer_table]
+    >> update_f_sales
+)
