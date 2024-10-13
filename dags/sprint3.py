@@ -1,17 +1,15 @@
-import time
-import requests
 import json
-import pandas as pd
-
+import time
 from datetime import datetime, timedelta
+
+import pandas as pd
+import requests
 from airflow import DAG
-from airflow.operators.python import (
-    PythonOperator,
-    BranchPythonOperator,
-)
-from airflow.providers.postgres.operators.postgres import PostgresOperator
-from airflow.providers.postgres.hooks.postgres import PostgresHook
 from airflow.hooks.base import BaseHook
+from airflow.operators.python import PythonOperator
+from airflow.providers.postgres.hooks.postgres import PostgresHook
+from airflow.providers.postgres.operators.postgres import PostgresOperator
+from sqlalchemy.dialects.postgresql import insert
 
 http_conn_id = BaseHook.get_connection("http_conn_id")
 api_key = http_conn_id.extra_dejson.get("api_key")
@@ -90,6 +88,21 @@ def get_increment(date, ti):
     print(f"increment_id={increment_id}")
 
 
+def insert_on_conflict_nothing(table, conn, keys, data_iter):
+    """
+    Функция для применения логики, по которой даг можно запускать повторно.
+    Проверяет наличие записи по uniq_id. Если записи нет, ниичего не делает.
+    """
+    data = [dict(zip(keys, row)) for row in data_iter]
+    stmt = (
+        insert(table.table)
+        .values(data)
+        .on_conflict_do_nothing(index_elements=["uniq_id"])
+    )
+    result = conn.execute(stmt)
+    return result.rowcount
+
+
 def upload_data_to_staging(filename, date, pg_table, pg_schema, ti):
     increment_id = ti.xcom_pull(key="increment_id")
     s3_filename = f"https://storage.yandexcloud.net/s3-sprint3/cohort_{cohort}/{nickname}/project/{increment_id}/{filename}"
@@ -110,8 +123,14 @@ def upload_data_to_staging(filename, date, pg_table, pg_schema, ti):
 
     postgres_hook = PostgresHook(postgres_conn_id)
     engine = postgres_hook.get_sqlalchemy_engine()
+
     row_count = df.to_sql(
-        pg_table, engine, schema=pg_schema, if_exists="append", index=False
+        pg_table,
+        engine,
+        schema=pg_schema,
+        if_exists="append",
+        index=False,
+        method=insert_on_conflict_nothing,
     )
     print(f"{row_count} rows was inserted")
 
@@ -184,11 +203,22 @@ with DAG(
         parameters={"date": {business_dt}},
     )
 
+    update_f_customer_retention = PostgresOperator(
+        task_id="update_f_customer_retention",
+        postgres_conn_id=postgres_conn_id,
+        sql="sql/mart.f_customer_retention.sql",
+        parameters={"date": {business_dt}},
+    )
+
+upload_d = [update_d_item_table, update_d_city_table, update_d_customer_table]
+
 (
     generate_report
     >> get_report
     >> get_increment
     >> upload_user_order_inc
-    >> [update_d_item_table, update_d_city_table, update_d_customer_table]
-    >> update_f_sales
+    >> upload_d
 )
+
+upload_d >> update_f_sales
+upload_d >> update_f_customer_retention
