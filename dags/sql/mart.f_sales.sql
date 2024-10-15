@@ -1,3 +1,9 @@
+-- удаляем записи на дату загрузки, чтобы избежать дублей
+DELETE FROM mart.f_sales fs
+USING mart.d_calendar dc
+WHERE fs.date_id = dc.date_id
+	AND dc.date_actual = '{{ ds }}';
+
 insert into mart.f_sales (
 	date_id,
 	item_id,
