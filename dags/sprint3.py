@@ -220,5 +220,4 @@ upload_d = [update_d_item_table, update_d_city_table, update_d_customer_table]
     >> upload_d
 )
 
-upload_d >> update_f_sales
-upload_d >> update_f_customer_retention
+upload_d >> update_f_sales >> update_f_customer_retention
